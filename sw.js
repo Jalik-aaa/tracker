@@ -1,5 +1,5 @@
 const CACHE = 'equip-tracker-v1';
-const FILES = ['./index.html', './manifest.json', './icon.svg'];
+const FILES = ['./index.html', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png', './icon-512-maskable.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));
