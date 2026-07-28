@@ -1,4 +1,4 @@
-const CACHE = 'equip-tracker-v1';
+const CACHE = 'equip-tracker-v2';
 const FILES = ['./index.html', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png', './icon-512-maskable.png'];
 
 self.addEventListener('install', e => {
@@ -14,6 +14,10 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
+  const url = new URL(e.request.url);
+  if(e.request.method !== 'GET' || url.origin !== self.location.origin){
+    return; // let Firebase/Firestore and other cross-origin requests go straight to network
+  }
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request).catch(() => cached))
   );

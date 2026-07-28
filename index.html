@@ -13,6 +13,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <style>
   :root{
     --bg: #12161d;
@@ -166,6 +168,19 @@
 
 <script>
 const TYPE_LABELS = { printer:'Принтер', radio:'Рация', laptop:'Ноутбук', other:'Другое' };
+
+const firebaseConfig = {
+  apiKey: "AIzaSyB_t1CCaRhGHZH9N6NWjX5LNKQmrkb3QYo",
+  authDomain: "managment-control.firebaseapp.com",
+  projectId: "managment-control",
+  storageBucket: "managment-control.firebasestorage.app",
+  messagingSenderId: "1044391640440",
+  appId: "1:1044391640440:web:820232ab55172de1dd9c8d"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const docRef = db.collection('equipmentTracker').doc('shared');
+
 let state = { devices: [], logs: {} };
 let filterType = 'all';
 let searchQ = '';
@@ -177,26 +192,36 @@ const statsEl = document.getElementById('stats');
 
 async function loadData(){
   try{
-    const raw = localStorage.getItem('equip-app-data');
-    if(raw){
-      const parsed = JSON.parse(raw);
-      state.devices = parsed.devices || [];
-      state.logs = parsed.logs || {};
-    }
+    const params = new URLSearchParams(location.search);
+    const wantedId = params.get('device');
+    let openedOnce = false;
+
+    docRef.onSnapshot((snap)=>{
+      if(snap.exists()){
+        const data = snap.data();
+        state.devices = data.devices || [];
+        state.logs = data.logs || {};
+      } else {
+        state.devices = [];
+        state.logs = {};
+      }
+      render();
+      if(!openedOnce && wantedId && state.devices.some(d=>d.id===wantedId)){
+        openDetail(wantedId);
+        openedOnce = true;
+      }
+    }, (err)=>{
+      console.error('Firestore sync error', err);
+      showToast('Ошибка синхронизации');
+    });
   }catch(e){
-    console.log('No existing data yet, starting fresh.', e);
-  }
-  render();
-  const params = new URLSearchParams(location.search);
-  const wantedId = params.get('device');
-  if(wantedId && state.devices.some(d=>d.id===wantedId)){
-    openDetail(wantedId);
+    console.error('loadData failed', e);
   }
 }
 
 async function saveData(){
   try{
-    localStorage.setItem('equip-app-data', JSON.stringify(state));
+    await docRef.set({ devices: state.devices, logs: state.logs });
   }catch(e){
     console.error('Save failed', e);
     showToast('Ошибка сохранения');
