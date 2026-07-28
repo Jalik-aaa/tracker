@@ -197,7 +197,7 @@ async function loadData(){
     let openedOnce = false;
 
     docRef.onSnapshot((snap)=>{
-      if(snap.exists()){
+      if(snap.exists){
         const data = snap.data();
         state.devices = data.devices || [];
         state.logs = data.logs || {};
