@@ -150,6 +150,7 @@
   .label img, .label canvas{ width:26mm; height:26mm; margin-bottom:2mm; }
   .label .l-name{ font-size:9pt; font-weight:700; line-height:1.2; margin-bottom:1mm; }
   .label .l-inv{ font-size:7.5pt; color:#555; font-family:monospace; }
+  .label .l-owner{ font-size:7.5pt; color:#222; font-weight:600; margin-top:1mm; }
 </style>
 </head>
 <body>
@@ -616,9 +617,10 @@ async function deleteDevice(id){
 
 // --- Export to Excel ---
 function exportExcel(){
-  if(state.devices.length===0){ showToast('Нет устройств для экспорта'); return; }
+  const source = visibleDevices.length ? visibleDevices : state.devices;
+  if(source.length===0){ showToast('Нет устройств для экспорта'); return; }
 
-  const devicesRows = state.devices.map(d => ({
+  const devicesRows = source.map(d => ({
     'ID': d.id,
     'Тип': TYPE_LABELS[d.type] || d.type,
     'Название': d.name,
@@ -630,7 +632,7 @@ function exportExcel(){
   }));
 
   const logRows = [];
-  state.devices.forEach(d=>{
+  source.forEach(d=>{
     (state.logs[d.id] || []).forEach(l=>{
       logRows.push({
         'Устройство': d.name,
@@ -652,7 +654,8 @@ function exportExcel(){
   XLSX.utils.book_append_sheet(wb, wsLogs, 'Обслуживание');
 
   const dateStr = new Date().toISOString().slice(0,10);
-  XLSX.writeFile(wb, `Оборудование_${dateStr}.xlsx`);
+  const groupLabel = filterType==='all' ? 'Все' : (filterType==='in_repair' ? 'В-ремонте' : (TYPE_LABELS[filterType]||filterType));
+  XLSX.writeFile(wb, `Оборудование_${groupLabel}_${dateStr}.xlsx`);
   showToast('Excel-файл скачан');
 }
 document.getElementById('exportBtn').onclick = exportExcel;
@@ -666,7 +669,7 @@ function printLabels(devices){
   devices.forEach(d=>{
     const label = document.createElement('div');
     label.className = 'label';
-    label.innerHTML = `<div class="l-qr"><img src="${getQR(d.id)}" style="width:100%;height:100%;object-fit:contain;" alt="QR"></div><div class="l-name">${escapeHtml(d.name)}</div><div class="l-inv">${escapeHtml(d.inv||d.id)}</div>`;
+    label.innerHTML = `<div class="l-qr"><img src="${getQR(d.id)}" style="width:100%;height:100%;object-fit:contain;" alt="QR"></div><div class="l-name">${escapeHtml(d.name)}</div><div class="l-inv">Инв: ${escapeHtml(d.inv||d.id)}</div>${d.owner ? `<div class="l-owner">${escapeHtml(d.owner)}</div>` : ''}`;
     sheet.appendChild(label);
   });
   setTimeout(()=>{ window.print(); }, 50);
