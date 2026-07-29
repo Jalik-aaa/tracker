@@ -1,4 +1,4 @@
-const CACHE = 'equip-tracker-v7';
+const CACHE = 'equip-tracker-v8';
 const FILES = ['./index.html', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png', './icon-512-maskable.png'];
 
 self.addEventListener('install', e => {

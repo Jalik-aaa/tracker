@@ -162,7 +162,7 @@
     <div class="stats" id="stats"></div>
   </header>
 
-  <div class="toolbar">
+  <div class="toolbar" id="toolbar">
     <input class="search" id="search" placeholder="Поиск по имени, владельцу, инв. номеру...">
     <button class="chip active" data-type="all">Все</button>
     <button class="chip" data-type="printer">Принтеры</button>
@@ -201,6 +201,7 @@ let filterType = 'all';
 let searchQ = '';
 let currentDeviceId = null;
 let visibleDevices = [];
+let qrMode = false;
 
 const contentEl = document.getElementById('content');
 const statsEl = document.getElementById('stats');
@@ -209,7 +210,7 @@ async function loadData(){
   try{
     const params = new URLSearchParams(location.search);
     const wantedId = params.get('device');
-    let openedOnce = false;
+    if(wantedId) qrMode = true;
 
     docRef.onSnapshot((snap)=>{
       if(snap.exists){
@@ -220,10 +221,16 @@ async function loadData(){
         state.devices = [];
         state.logs = {};
       }
-      render();
-      if(!openedOnce && wantedId && state.devices.some(d=>d.id===wantedId)){
-        openDetail(wantedId);
-        openedOnce = true;
+      if(qrMode){
+        document.getElementById('toolbar').style.display = 'none';
+        if(state.devices.some(d=>d.id===wantedId)){
+          contentEl.innerHTML = '';
+          openDetail(wantedId, true);
+        } else {
+          contentEl.innerHTML = `<div class="empty">Устройство не найдено.<br><a href="javascript:void(0)" onclick="exitQrMode()" style="color:var(--amber)">Показать все устройства</a></div>`;
+        }
+      } else {
+        render();
       }
     }, (err)=>{
       console.error('Firestore sync error', err);
@@ -365,6 +372,19 @@ document.getElementById('addBtn').onclick = ()=>{
   setTimeout(()=>document.getElementById('f-name').focus(), 50);
 };
 
+function cancelEdit(id){
+  if(qrMode){ closeModal(); } else { openDetail(id); }
+}
+
+function refreshDetail(id){
+  if(qrMode){
+    openDetail(id, true);
+  } else {
+    render();
+    openDetail(id);
+  }
+}
+
 async function saveDevice(){
   const name = document.getElementById('f-name').value.trim();
   if(!name){ showToast('Укажите название устройства'); return; }
@@ -406,7 +426,7 @@ function editDevice(id){
     </div>
     <div class="field"><label>Расположение</label><input id="f-location" placeholder="напр. 3 этаж, каб. 305"></div>
     <div class="modal-actions">
-      <button class="btn ghost" onclick="openDetail('${id}')">Отмена</button>
+      <button class="btn ghost" onclick="cancelEdit('${id}')">Отмена</button>
       <button class="btn" onclick="saveEditedDevice('${id}')">Сохранить</button>
     </div>
   `);
@@ -429,19 +449,18 @@ async function saveEditedDevice(id){
   d.owner = document.getElementById('f-owner').value.trim();
   d.location = document.getElementById('f-location').value.trim();
   await saveData();
-  render();
-  openDetail(id);
+  closeModal();
+  refreshDetail(id);
   showToast('Изменения сохранены');
 }
 
 // --- Detail view ---
-function openDetail(id){
+function openDetail(id, asPage){
   currentDeviceId = id;
   const d = state.devices.find(x=>x.id===id);
   if(!d) return;
   const logs = state.logs[id] || [];
-  openModal(`
-    <button class="close-x" onclick="closeModal()">&times;</button>
+  const body = `
     <div class="detail-head">
       <div class="detail-qr"><img src="${getQR(d.id)}" style="width:120px;height:120px;display:block;" alt="QR"></div>
       <div class="detail-info">
@@ -451,12 +470,12 @@ function openDetail(id){
           <div>Инв. номер: <b>${escapeHtml(d.inv||'—')}</b></div>
           <div>Владелец: <b>${escapeHtml(d.owner||'—')}</b></div>
           <div>Расположение: <b>${escapeHtml(d.location||'—')}</b></div>
-          <div>Ссылка QR: <b style="font-size:10.5px;">${deviceUrl(d.id)}</b></div>
+          ${asPage ? '' : `<div>Ссылка QR: <b style="font-size:10.5px;">${deviceUrl(d.id)}</b></div>`}
         </div>
         <div class="detail-actions">
           <button class="btn btn-sm ghost" onclick="editDevice('${d.id}')">✎ Изменить</button>
           <button class="btn btn-sm ghost" onclick="downloadQR('${d.id}','${escapeHtml(d.name).replace(/'/g,"")}')">Скачать QR</button>
-          <button class="btn btn-sm ghost" onclick="printLabels([state.devices.find(x=>x.id==='${d.id}')])">Печать наклейки</button>
+          ${asPage ? '' : `<button class="btn btn-sm ghost" onclick="printLabels([state.devices.find(x=>x.id==='${d.id}')])">Печать наклейки</button>`}
           <button class="btn btn-sm danger" onclick="deleteDevice('${d.id}')">Удалить устройство</button>
         </div>
       </div>
@@ -504,7 +523,27 @@ function openDetail(id){
           `).join('')}
       </div>
     </div>
-  `);
+  `;
+
+  if(asPage){
+    contentEl.innerHTML = `
+      <div class="modal" style="margin:0 auto; max-width:520px;">
+        ${body}
+        <div style="text-align:center; margin-top:18px; padding-top:16px; border-top:1px dashed var(--border);">
+          <a href="javascript:void(0)" onclick="exitQrMode()" style="color:var(--muted); font-family:var(--mono); font-size:12px;">Показать все устройства →</a>
+        </div>
+      </div>
+    `;
+  } else {
+    openModal(`<button class="close-x" onclick="closeModal()">&times;</button>${body}`);
+  }
+}
+
+function exitQrMode(){
+  qrMode = false;
+  history.replaceState(null, '', location.pathname);
+  document.getElementById('toolbar').style.display = '';
+  render();
 }
 
 async function startRepair(deviceId){
@@ -521,8 +560,7 @@ async function startRepair(deviceId){
   d.inRepairBy = name;
   d.inRepairSince = new Date().toISOString();
   await saveData();
-  openDetail(deviceId);
-  render();
+  refreshDetail(deviceId);
   showToast('Отмечено: вы чините это устройство');
 }
 
@@ -541,8 +579,7 @@ async function finishRepair(deviceId){
   delete d.inRepairBy;
   delete d.inRepairSince;
   await saveData();
-  openDetail(deviceId);
-  render();
+  refreshDetail(deviceId);
   showToast('Ремонт завершён');
 }
 
@@ -559,8 +596,7 @@ async function addLog(deviceId){
   if(!state.logs[deviceId]) state.logs[deviceId] = [];
   state.logs[deviceId].unshift({ id: uid(), date, action, note });
   await saveData();
-  openDetail(deviceId);
-  render();
+  refreshDetail(deviceId);
   showToast('Запись добавлена');
 }
 
@@ -569,8 +605,12 @@ async function deleteDevice(id){
   state.devices = state.devices.filter(d=>d.id!==id);
   delete state.logs[id];
   await saveData();
-  closeModal();
-  render();
+  if(qrMode){
+    exitQrMode();
+  } else {
+    closeModal();
+    render();
+  }
   showToast('Устройство удалено');
 }
 
