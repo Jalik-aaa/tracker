@@ -256,6 +256,24 @@ function deviceUrl(id){
   return `${location.origin}${location.pathname}?device=${encodeURIComponent(id)}`;
 }
 
+const qrCache = {};
+function getQR(id){
+  if(qrCache[id]) return qrCache[id];
+  const tmp = document.createElement('div');
+  tmp.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+  document.body.appendChild(tmp);
+  new QRCode(tmp, {
+    text: deviceUrl(id), width:220, height:220,
+    colorDark:'#12161d', colorLight:'#ffffff', correctLevel: QRCode.CorrectLevel.M
+  });
+  const canvas = tmp.querySelector('canvas');
+  const img = tmp.querySelector('img');
+  const dataUrl = canvas ? canvas.toDataURL('image/png') : (img ? img.src : '');
+  document.body.removeChild(tmp);
+  qrCache[id] = dataUrl;
+  return dataUrl;
+}
+
 function fmtDate(iso){
   const d = new Date(iso);
   return d.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit', year:'numeric'});
@@ -303,7 +321,7 @@ function render(){
       ${d.status==='in_repair' ? `<div class="repair-badge">🔧 в ремонте</div>` : ''}
       <div class="tag-type">${TYPE_LABELS[d.type]||d.type}</div>
       <div class="tag-name">${escapeHtml(d.name)}</div>
-      <div class="tag-qr" id="qr-${d.id}"></div>
+      <div class="tag-qr"><img src="${getQR(d.id)}" style="width:100%;height:100%;object-fit:contain;" alt="QR"></div>
       <div class="tag-meta">
         <div>Инв: <b>${escapeHtml(d.inv||'—')}</b></div>
         <div>Владелец: <b>${escapeHtml(d.owner||'—')}</b></div>
@@ -311,10 +329,6 @@ function render(){
       </div>
     `;
     grid.appendChild(card);
-    new QRCode(document.getElementById(`qr-${d.id}`), {
-      text: deviceUrl(d.id), width:72, height:72,
-      colorDark:'#12161d', colorLight:'#ffffff', correctLevel: QRCode.CorrectLevel.M
-    });
   });
 }
 
@@ -371,6 +385,55 @@ async function saveDevice(){
   showToast('Устройство добавлено');
 }
 
+function editDevice(id){
+  const d = state.devices.find(x=>x.id===id);
+  if(!d) return;
+  openModal(`
+    <button class="close-x" onclick="closeModal()">&times;</button>
+    <h2>Изменить устройство</h2>
+    <div class="field"><label>Тип</label>
+      <select id="f-type">
+        <option value="printer">Принтер</option>
+        <option value="radio">Рация</option>
+        <option value="laptop">Ноутбук</option>
+        <option value="other">Другое</option>
+      </select>
+    </div>
+    <div class="field"><label>Название / модель</label><input id="f-name" placeholder="напр. HP LaserJet 400, каб. 12"></div>
+    <div class="row2">
+      <div class="field"><label>Инв. номер</label><input id="f-inv" placeholder="напр. 00452"></div>
+      <div class="field"><label>Владелец / отдел</label><input id="f-owner" placeholder="напр. Иванов А. / Бухгалтерия"></div>
+    </div>
+    <div class="field"><label>Расположение</label><input id="f-location" placeholder="напр. 3 этаж, каб. 305"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="openDetail('${id}')">Отмена</button>
+      <button class="btn" onclick="saveEditedDevice('${id}')">Сохранить</button>
+    </div>
+  `);
+  document.getElementById('f-type').value = d.type;
+  document.getElementById('f-name').value = d.name || '';
+  document.getElementById('f-inv').value = d.inv || '';
+  document.getElementById('f-owner').value = d.owner || '';
+  document.getElementById('f-location').value = d.location || '';
+  setTimeout(()=>document.getElementById('f-name').focus(), 50);
+}
+
+async function saveEditedDevice(id){
+  const name = document.getElementById('f-name').value.trim();
+  if(!name){ showToast('Укажите название устройства'); return; }
+  const d = state.devices.find(x=>x.id===id);
+  if(!d) return;
+  d.type = document.getElementById('f-type').value;
+  d.name = name;
+  d.inv = document.getElementById('f-inv').value.trim();
+  d.owner = document.getElementById('f-owner').value.trim();
+  d.location = document.getElementById('f-location').value.trim();
+  await saveData();
+  render();
+  openDetail(id);
+  showToast('Изменения сохранены');
+}
+
 // --- Detail view ---
 function openDetail(id){
   currentDeviceId = id;
@@ -380,7 +443,7 @@ function openDetail(id){
   openModal(`
     <button class="close-x" onclick="closeModal()">&times;</button>
     <div class="detail-head">
-      <div class="detail-qr" id="detail-qr"></div>
+      <div class="detail-qr"><img src="${getQR(d.id)}" style="width:120px;height:120px;display:block;" alt="QR"></div>
       <div class="detail-info">
         <div class="tag-type">${TYPE_LABELS[d.type]||d.type}</div>
         <h2>${escapeHtml(d.name)}</h2>
@@ -391,6 +454,7 @@ function openDetail(id){
           <div>Ссылка QR: <b style="font-size:10.5px;">${deviceUrl(d.id)}</b></div>
         </div>
         <div class="detail-actions">
+          <button class="btn btn-sm ghost" onclick="editDevice('${d.id}')">✎ Изменить</button>
           <button class="btn btn-sm ghost" onclick="downloadQR('${d.id}','${escapeHtml(d.name).replace(/'/g,"")}')">Скачать QR</button>
           <button class="btn btn-sm ghost" onclick="printLabels([state.devices.find(x=>x.id==='${d.id}')])">Печать наклейки</button>
           <button class="btn btn-sm danger" onclick="deleteDevice('${d.id}')">Удалить устройство</button>
@@ -441,10 +505,6 @@ function openDetail(id){
       </div>
     </div>
   `);
-  new QRCode(document.getElementById('detail-qr'), {
-    text: deviceUrl(d.id), width:120, height:120,
-    colorDark:'#12161d', colorLight:'#ffffff', correctLevel: QRCode.CorrectLevel.M
-  });
 }
 
 async function startRepair(deviceId){
@@ -566,29 +626,16 @@ function printLabels(devices){
   devices.forEach(d=>{
     const label = document.createElement('div');
     label.className = 'label';
-    label.innerHTML = `<div class="l-qr" id="pqr-${d.id}"></div><div class="l-name">${escapeHtml(d.name)}</div><div class="l-inv">${escapeHtml(d.inv||d.id)}</div>`;
+    label.innerHTML = `<div class="l-qr"><img src="${getQR(d.id)}" style="width:100%;height:100%;object-fit:contain;" alt="QR"></div><div class="l-name">${escapeHtml(d.name)}</div><div class="l-inv">${escapeHtml(d.inv||d.id)}</div>`;
     sheet.appendChild(label);
-    new QRCode(document.getElementById(`pqr-${d.id}`), {
-      text: deviceUrl(d.id), width:110, height:110,
-      colorDark:'#12161d', colorLight:'#ffffff', correctLevel: QRCode.CorrectLevel.M
-    });
   });
-  setTimeout(()=>{ window.print(); }, 150);
+  setTimeout(()=>{ window.print(); }, 50);
 }
 document.getElementById('printAllBtn').onclick = ()=> printLabels(visibleDevices);
 
 function downloadQR(id, name){
-  const container = document.getElementById(currentDeviceId===id ? 'detail-qr' : `qr-${id}`);
-  if(!container){ showToast('QR не найден'); return; }
-  const canvas = container.querySelector('canvas');
-  const img = container.querySelector('img');
-  let dataUrl = null;
-  if(canvas){
-    dataUrl = canvas.toDataURL('image/png');
-  } else if(img && img.src){
-    dataUrl = img.src;
-  }
-  if(!dataUrl){ showToast('QR ещё не отрисован, попробуйте ещё раз'); return; }
+  const dataUrl = getQR(id);
+  if(!dataUrl){ showToast('QR не найден'); return; }
   const link = document.createElement('a');
   link.download = `QR_${name.replace(/[^a-zA-Zа-яА-Я0-9]+/g,'_')}.png`;
   link.href = dataUrl;
@@ -621,9 +668,11 @@ document.querySelectorAll('.chip').forEach(chip=>{
     render();
   };
 });
+let searchDebounce = null;
 document.getElementById('search').addEventListener('input', (e)=>{
   searchQ = e.target.value;
-  render();
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(render, 180);
 });
 
 loadData();
