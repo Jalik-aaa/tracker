@@ -68,6 +68,7 @@
   .btn{ font-family:var(--body); font-weight:600; font-size:13.5px; padding:10px 16px; border-radius:8px; border:1px solid var(--amber); background:var(--amber); color:#1a1206; cursor:pointer;}
   .btn:hover{ filter:brightness(1.08);}
   .btn.ghost{ background:transparent; color:var(--text); border-color:var(--border);}
+  .btn.ghost.active{ background:var(--amber); color:#1a1206; border-color:var(--amber);}
   .btn.danger{ background:transparent; color:var(--danger); border-color:var(--danger);}
 
   .grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(230px,1fr)); gap:16px;}
@@ -87,6 +88,10 @@
   .tag-qr{ background:#fff; border-radius:6px; padding:8px; width:88px; height:88px; display:flex; align-items:center; justify-content:center; margin-bottom:10px;}
   .tag-meta{ font-family:var(--mono); font-size:11.5px; color:var(--muted); line-height:1.7;}
   .tag-meta b{ color:var(--text); font-weight:500;}
+  .tag-qty{ margin-top:10px; display:flex; align-items:center; gap:8px; background:var(--surface2); border:1px solid var(--border); border-radius:7px; padding:6px 10px;}
+  .tag-qty label{ font-family:var(--mono); font-size:10.5px; color:var(--muted); flex:1;}
+  .tag-qty input{ width:52px; background:var(--bg); border:1px solid var(--border); border-radius:5px; color:var(--text); font-family:var(--mono); font-size:13px; padding:4px 6px; text-align:center;}
+  .tag-qty input:focus{ outline:none; border-color:var(--amber);}
   .empty{ text-align:center; padding:60px 20px; color:var(--muted); font-family:var(--mono); font-size:13px;}
 
   .overlay{ position:fixed; inset:0; background:rgba(10,13,17,0.75); backdrop-filter:blur(3px); display:flex; align-items:flex-start; justify-content:center; padding:40px 16px; overflow-y:auto; z-index:50;}
@@ -173,6 +178,8 @@
     <button class="chip chip-repair" data-type="in_repair" id="repairChip">🔧 В ремонте</button>
     <button class="btn ghost" id="exportBtn">⬇ Excel</button>
     <button class="btn ghost" id="printAllBtn">🖶 Наклейки</button>
+    <button class="btn ghost" id="selectModeBtn">☑ Выбрать для печати</button>
+    <button class="btn" id="printSelectedBtn" style="display:none;">🖶 Печать выбранных</button>
     <button class="btn" id="addBtn">+ Устройство</button>
   </div>
 
@@ -203,6 +210,8 @@ let searchQ = '';
 let currentDeviceId = null;
 let visibleDevices = [];
 let qrMode = false;
+let selectMode = false;
+let selectedQty = {};
 
 const contentEl = document.getElementById('content');
 const statsEl = document.getElementById('stats');
@@ -270,6 +279,64 @@ function checkAdminPassword(){
     return false;
   }
   return true;
+}
+
+// --- Telegram notifications for "call master" ---
+const TELEGRAM_BOT_TOKEN = 'ВАШ_ТОКЕН_БОТА';
+const TELEGRAM_CHAT_ID = 'ВАШ_CHAT_ID';
+
+async function sendTelegramNotification(text){
+  try{
+    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text })
+    });
+    if(!res.ok) throw new Error('Telegram API error');
+    return true;
+  }catch(e){
+    console.error('Telegram send failed', e);
+    return false;
+  }
+}
+
+function callMaster(deviceId){
+  const d = state.devices.find(x=>x.id===deviceId);
+  if(!d) return;
+  const savedName = localStorage.getItem('caller-name') || '';
+  const savedDept = localStorage.getItem('caller-dept') || '';
+  openModal(`
+    <button class="close-x" onclick="closeModal()">&times;</button>
+    <h2>🛎 Вызвать мастера</h2>
+    <div class="field"><label>Ваше имя</label><input id="cm-name" value="${escapeHtml(savedName)}" placeholder="Иванов Иван"></div>
+    <div class="field"><label>Отдел</label><input id="cm-dept" value="${escapeHtml(savedDept)}" placeholder="Бухгалтерия"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Отмена</button>
+      <button class="btn" onclick="submitCallMaster('${deviceId}')">Вызвать</button>
+    </div>
+  `);
+  setTimeout(()=>document.getElementById('cm-name').focus(), 50);
+}
+
+async function submitCallMaster(deviceId){
+  const d = state.devices.find(x=>x.id===deviceId);
+  if(!d) return;
+  const name = document.getElementById('cm-name').value.trim();
+  const dept = document.getElementById('cm-dept').value.trim();
+  if(!name){ showToast('Укажите имя'); return; }
+  localStorage.setItem('caller-name', name);
+  localStorage.setItem('caller-dept', dept);
+  const text =
+    `🛎 Вызов мастера\n` +
+    `Имя: ${name}\n` +
+    `Отдел: ${dept || '—'}\n` +
+    `Устройство: ${d.name}\n` +
+    `Тип: ${TYPE_LABELS[d.type] || d.type}\n` +
+    `Инв. номер: ${d.inv || '—'}\n` +
+    `Расположение: ${d.location || '—'}`;
+  const ok = await sendTelegramNotification(text);
+  closeModal();
+  showToast(ok ? 'Мастер вызван' : 'Не удалось отправить уведомление');
 }
 
 function deviceUrl(id){
@@ -347,6 +414,12 @@ function render(){
         <div>Владелец: <b>${escapeHtml(d.owner||'—')}</b></div>
         ${lastLog ? `<div>Посл. обслуж.: <b>${fmtDate(lastLog.date)}</b></div>` : `<div>Обслуживания нет</div>`}
       </div>
+      ${selectMode ? `
+        <div class="tag-qty" onclick="event.stopPropagation()">
+          <label>Наклеек, шт</label>
+          <input type="number" min="0" max="20" value="${selectedQty[d.id]||0}" onchange="setQty('${d.id}', this.value)">
+        </div>
+      ` : ''}
     `;
     grid.appendChild(card);
   });
@@ -503,6 +576,8 @@ function openDetail(id, asPage){
     ` : `
       <button class="btn repair-btn" onclick="startRepair('${d.id}')">🔧 Иду чинить это устройство</button>
     `}
+
+    <button class="btn repair-btn" style="background:var(--violet); border-color:var(--violet); color:#1a1030;" onclick="callMaster('${d.id}')">🛎 Вызвать мастера</button>
 
     <div class="log-section">
       <h3>Добавить запись обслуживания</h3>
@@ -689,6 +764,40 @@ function printLabels(devices){
   setTimeout(()=>{ window.print(); }, 50);
 }
 document.getElementById('printAllBtn').onclick = ()=> printLabels(visibleDevices);
+
+// --- Select devices with quantity for printing ---
+document.getElementById('selectModeBtn').onclick = ()=>{
+  selectMode = !selectMode;
+  document.getElementById('selectModeBtn').classList.toggle('active', selectMode);
+  document.getElementById('printSelectedBtn').style.display = selectMode ? '' : 'none';
+  if(!selectMode){ selectedQty = {}; }
+  updatePrintSelectedBtn();
+  render();
+};
+
+function setQty(id, val){
+  let n = parseInt(val, 10);
+  if(isNaN(n)) n = 0;
+  n = Math.max(0, Math.min(20, n));
+  selectedQty[id] = n;
+  updatePrintSelectedBtn();
+}
+
+function updatePrintSelectedBtn(){
+  const total = Object.values(selectedQty).reduce((a,n)=>a+n, 0);
+  const btn = document.getElementById('printSelectedBtn');
+  btn.textContent = `🖶 Печать выбранных (${total})`;
+}
+
+document.getElementById('printSelectedBtn').onclick = ()=>{
+  const list = [];
+  state.devices.forEach(d=>{
+    const n = selectedQty[d.id] || 0;
+    for(let i=0;i<n;i++) list.push(d);
+  });
+  if(list.length===0){ showToast('Укажите количество наклеек хотя бы для одного устройства'); return; }
+  printLabels(list);
+};
 
 function downloadQR(id, name){
   const dataUrl = getQR(id);
