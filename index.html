@@ -282,8 +282,8 @@ function checkAdminPassword(){
 }
 
 // --- Telegram notifications for "call master" ---
-const TELEGRAM_BOT_TOKEN = 'ВАШ_ТОКЕН_БОТА';
-const TELEGRAM_CHAT_ID = 'ВАШ_CHAT_ID';
+const TELEGRAM_BOT_TOKEN = '8667792092:AAEhEeo2lKFugVVDWJVs7Llk4kzXlrc39j4';
+const TELEGRAM_CHAT_ID = '-5319449377';
 
 async function sendTelegramNotification(text){
   try{
@@ -300,42 +300,18 @@ async function sendTelegramNotification(text){
   }
 }
 
-function callMaster(deviceId){
+async function callMaster(deviceId){
   const d = state.devices.find(x=>x.id===deviceId);
   if(!d) return;
-  const savedName = localStorage.getItem('caller-name') || '';
-  const savedDept = localStorage.getItem('caller-dept') || '';
-  openModal(`
-    <button class="close-x" onclick="closeModal()">&times;</button>
-    <h2>🛎 Вызвать мастера</h2>
-    <div class="field"><label>Ваше имя</label><input id="cm-name" value="${escapeHtml(savedName)}" placeholder="Иванов Иван"></div>
-    <div class="field"><label>Отдел</label><input id="cm-dept" value="${escapeHtml(savedDept)}" placeholder="Бухгалтерия"></div>
-    <div class="modal-actions">
-      <button class="btn ghost" onclick="closeModal()">Отмена</button>
-      <button class="btn" onclick="submitCallMaster('${deviceId}')">Вызвать</button>
-    </div>
-  `);
-  setTimeout(()=>document.getElementById('cm-name').focus(), 50);
-}
-
-async function submitCallMaster(deviceId){
-  const d = state.devices.find(x=>x.id===deviceId);
-  if(!d) return;
-  const name = document.getElementById('cm-name').value.trim();
-  const dept = document.getElementById('cm-dept').value.trim();
-  if(!name){ showToast('Укажите имя'); return; }
-  localStorage.setItem('caller-name', name);
-  localStorage.setItem('caller-dept', dept);
+  if(!confirm(`Вызвать мастера к устройству «${d.name}»?`)) return;
   const text =
     `🛎 Вызов мастера\n` +
-    `Имя: ${name}\n` +
-    `Отдел: ${dept || '—'}\n` +
     `Устройство: ${d.name}\n` +
     `Тип: ${TYPE_LABELS[d.type] || d.type}\n` +
     `Инв. номер: ${d.inv || '—'}\n` +
+    `Владелец / отдел: ${d.owner || '—'}\n` +
     `Расположение: ${d.location || '—'}`;
   const ok = await sendTelegramNotification(text);
-  closeModal();
   showToast(ok ? 'Мастер вызван' : 'Не удалось отправить уведомление');
 }
 
