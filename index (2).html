@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Учёт оборудования</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#12161d">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" href="icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="icon-512.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --bg: #12161d;
+    --surface: #1a212b;
+    --surface2: #212a36;
+    --border: #2b3542;
+    --text: #e8ecf1;
+    --muted: #8b96a5;
+    --amber: #e8a33d;
+    --teal: #4fb0a5;
+    --slate: #6f8bb3;
+    --violet: #a68df0;
+    --danger: #e0605a;
+    --mono: 'JetBrains Mono', monospace;
+    --display: 'Space Grotesk', sans-serif;
+    --body: 'Inter', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text); font-family:var(--body);
+    min-height:100vh;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    background-position: -1px -1px;
+    background-color: var(--bg);
+  }
+  body::before{
+    content:'';
+    position:fixed; inset:0;
+    background: radial-gradient(circle at 15% 0%, rgba(232,163,61,0.06), transparent 45%),
+                radial-gradient(circle at 85% 10%, rgba(79,176,165,0.05), transparent 40%);
+    pointer-events:none;
+  }
+  .wrap{ max-width:1100px; margin:0 auto; padding:28px 20px 80px; position:relative; }
+
+  header{ display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap; margin-bottom:26px; border-bottom:1px dashed var(--border); padding-bottom:20px;}
+  .brand-eyebrow{ font-family:var(--mono); font-size:11px; letter-spacing:.18em; color:var(--amber); text-transform:uppercase; margin-bottom:6px;}
+  h1{ font-family:var(--display); font-size:28px; margin:0; font-weight:700; letter-spacing:-0.01em;}
+  .stats{ display:flex; gap:18px; font-family:var(--mono); font-size:12px; color:var(--muted);}
+  .stats b{ color:var(--text); font-size:15px; display:block; font-family:var(--display);}
+
+  .toolbar{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; align-items:center;}
+  .search{ flex:1; min-width:180px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 14px; color:var(--text); font-family:var(--body); font-size:14px;}
+  .search:focus{ outline:none; border-color:var(--amber);}
+  .chip{ font-family:var(--mono); font-size:12px; padding:8px 12px; border-radius:7px; border:1px solid var(--border); background:var(--surface); color:var(--muted); cursor:pointer; white-space:nowrap;}
+  .chip-repair{ border-color:var(--amber); color:var(--amber); font-weight:600; }
+  .chip-repair.active{ background:var(--amber); color:#1a1206; }
+  .chip.active{ color:var(--bg); background:var(--amber); border-color:var(--amber); font-weight:600;}
+  .btn{ font-family:var(--body); font-weight:600; font-size:13.5px; padding:10px 16px; border-radius:8px; border:1px solid var(--amber); background:var(--amber); color:#1a1206; cursor:pointer;}
+  .btn:hover{ filter:brightness(1.08);}
+  .btn.ghost{ background:transparent; color:var(--text); border-color:var(--border);}
+  .btn.danger{ background:transparent; color:var(--danger); border-color:var(--danger);}
+
+  .grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(230px,1fr)); gap:16px;}
+  .tag{
+    position:relative; background:var(--surface); border:1px dashed var(--border); border-radius:10px;
+    padding:16px; cursor:pointer; transition:.15s; overflow:hidden;
+  }
+  .tag:hover{ border-color:var(--amber); transform:translateY(-2px);}
+  .tag::before{ content:''; position:absolute; left:0; top:0; bottom:0; width:5px;}
+  .tag.type-printer::before{ background:var(--amber);}
+  .tag.type-radio::before{ background:var(--teal);}
+  .tag.type-laptop::before{ background:var(--slate);}
+  .tag.type-other::before{ background:var(--violet);}
+  .tag-hole{ position:absolute; top:10px; right:10px; width:10px; height:10px; border-radius:50%; background:var(--bg); border:1px dashed var(--border);}
+  .tag-type{ font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.14em; color:var(--muted); margin-bottom:6px;}
+  .tag-name{ font-family:var(--display); font-size:16px; font-weight:600; margin-bottom:10px; padding-right:16px; line-height:1.25;}
+  .tag-qr{ background:#fff; border-radius:6px; padding:8px; width:88px; height:88px; display:flex; align-items:center; justify-content:center; margin-bottom:10px;}
+  .tag-meta{ font-family:var(--mono); font-size:11.5px; color:var(--muted); line-height:1.7;}
+  .tag-meta b{ color:var(--text); font-weight:500;}
+  .empty{ text-align:center; padding:60px 20px; color:var(--muted); font-family:var(--mono); font-size:13px;}
+
+  .overlay{ position:fixed; inset:0; background:rgba(10,13,17,0.75); backdrop-filter:blur(3px); display:flex; align-items:flex-start; justify-content:center; padding:40px 16px; overflow-y:auto; z-index:50;}
+  .modal{ background:var(--surface); border:1px solid var(--border); border-radius:14px; max-width:520px; width:100%; padding:26px; margin-bottom:40px;}
+  .modal h2{ font-family:var(--display); margin:0 0 18px; font-size:20px;}
+  .field{ margin-bottom:14px;}
+  .field label{ display:block; font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin-bottom:6px;}
+  .field input, .field select, .field textarea{
+    width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:7px; padding:10px 12px; color:var(--text); font-family:var(--body); font-size:14px;
+  }
+  .field textarea{ resize:vertical; min-height:60px;}
+  .field input:focus, .field select:focus, .field textarea:focus{ outline:none; border-color:var(--amber);}
+  .row2{ display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .modal-actions{ display:flex; gap:10px; justify-content:flex-end; margin-top:20px;}
+
+  .detail-head{ display:flex; gap:18px; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap;}
+  .detail-qr{ background:#fff; border-radius:8px; padding:10px;}
+  .detail-info .tag-type{ margin-bottom:4px;}
+  .detail-info h2{ margin:0 0 8px;}
+  .detail-info .tag-meta{ font-size:12.5px;}
+  .detail-actions{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+  .btn-sm{ font-size:12px; padding:7px 11px;}
+
+  .log-section h3{ font-family:var(--display); font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:22px 0 10px; border-top:1px dashed var(--border); padding-top:18px;}
+  .log-entry{ background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:8px;}
+  .log-entry-top{ display:flex; justify-content:space-between; font-family:var(--mono); font-size:11px; color:var(--muted); margin-bottom:4px;}
+  .log-entry-action{ font-family:var(--display); font-weight:600; font-size:13.5px; margin-bottom:3px;}
+  .log-entry-note{ font-size:13px; color:var(--muted); line-height:1.4;}
+  .no-logs{ font-family:var(--mono); font-size:12px; color:var(--muted); padding:16px 0; text-align:center; border:1px dashed var(--border); border-radius:8px;}
+
+  .close-x{ position:absolute; top:16px; right:16px; background:none; border:none; color:var(--muted); font-size:20px; cursor:pointer; line-height:1;}
+  .repair-btn{ width:100%; margin-bottom:22px; padding:14px; font-size:15px; background:var(--teal); border-color:var(--teal); color:#08201d; }
+  .repair-btn:hover{ filter:brightness(1.1); }
+  .repair-banner{
+    display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;
+    background:rgba(232,163,61,0.12); border:1px solid var(--amber); border-radius:8px;
+    padding:12px 14px; margin-bottom:22px; font-size:13px;
+  }
+  .repair-badge{
+    position:absolute; top:-1px; left:14px; background:var(--amber); color:#1a1206;
+    font-family:var(--mono); font-size:9.5px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.06em; padding:3px 8px; border-radius:0 0 6px 6px;
+  }
+  .toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--surface2); border:1px solid var(--amber); color:var(--text); padding:10px 18px; border-radius:8px; font-family:var(--mono); font-size:12.5px; z-index:100; opacity:0; transition:.25s; pointer-events:none;}
+  .toast.show{ opacity:1;}
+  .loading{ text-align:center; padding:60px; color:var(--muted); font-family:var(--mono); font-size:13px;}
+
+  #print-area{ display:none; }
+  @media print{
+    body *{ visibility:hidden; }
+    #print-area, #print-area *{ visibility:visible; }
+    #print-area{ display:block; position:absolute; top:0; left:0; width:100%; }
+    body{ background:#fff; }
+  }
+  .label-sheet{ display:grid; grid-template-columns:repeat(3, 1fr); gap:6mm; padding:8mm; }
+  .label{
+    border:1px dashed #999; border-radius:4px; padding:4mm; text-align:center;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    break-inside:avoid; font-family:'Inter', sans-serif; color:#111;
+  }
+  .label img, .label canvas{ width:26mm; height:26mm; margin-bottom:2mm; }
+  .label .l-name{ font-size:9pt; font-weight:700; line-height:1.2; margin-bottom:1mm; }
+  .label .l-inv{ font-size:7.5pt; color:#555; font-family:monospace; }
+  .label .l-owner{ font-size:7.5pt; color:#222; font-weight:600; margin-top:1mm; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="brand-eyebrow">// журнал обслуживания</div>
+      <h1>Учёт оборудования</h1>
+    </div>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <div class="toolbar" id="toolbar">
+    <input class="search" id="search" placeholder="Поиск по имени, владельцу, инв. номеру...">
+    <button class="chip active" data-type="all">Все</button>
+    <button class="chip" data-type="printer">Принтеры</button>
+    <button class="chip" data-type="radio">Рации</button>
+    <button class="chip" data-type="laptop">Ноутбуки</button>
+    <button class="chip" data-type="other">Другое</button>
+    <button class="chip chip-repair" data-type="in_repair" id="repairChip">🔧 В ремонте</button>
+    <button class="btn ghost" id="exportBtn">⬇ Excel</button>
+    <button class="btn ghost" id="printAllBtn">🖶 Наклейки</button>
+    <button class="btn" id="addBtn">+ Устройство</button>
+  </div>
+
+  <div id="content" class="loading">Загрузка данных...</div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div id="print-area"></div>
+
+<script>
+const TYPE_LABELS = { printer:'Принтер', radio:'Рация', laptop:'Ноутбук', other:'Другое' };
+
+const firebaseConfig = {
+  apiKey: "AIzaSyB_t1CCaRhGHZH9N6NWjX5LNKQmrkb3QYo",
+  authDomain: "managment-control.firebaseapp.com",
+  projectId: "managment-control",
+  storageBucket: "managment-control.firebasestorage.app",
+  messagingSenderId: "1044391640440",
+  appId: "1:1044391640440:web:820232ab55172de1dd9c8d"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const docRef = db.collection('equipmentTracker').doc('shared');
+
+let state = { devices: [], logs: {} };
+let filterType = 'all';
+let searchQ = '';
+let currentDeviceId = null;
+let visibleDevices = [];
+let qrMode = false;
+
+const contentEl = document.getElementById('content');
+const statsEl = document.getElementById('stats');
+
+async function loadData(){
+  try{
+    const params = new URLSearchParams(location.search);
+    const wantedId = params.get('device');
+    if(wantedId) qrMode = true;
+
+    docRef.onSnapshot((snap)=>{
+      if(snap.exists){
+        const data = snap.data();
+        state.devices = data.devices || [];
+        state.logs = data.logs || {};
+      } else {
+        state.devices = [];
+        state.logs = {};
+      }
+      if(qrMode){
+        document.getElementById('toolbar').style.display = 'none';
+        if(state.devices.some(d=>d.id===wantedId)){
+          contentEl.innerHTML = '';
+          openDetail(wantedId, true);
+        } else {
+          contentEl.innerHTML = `<div class="empty">Устройство не найдено.<br><a href="javascript:void(0)" onclick="exitQrMode()" style="color:var(--amber)">Показать все устройства</a></div>`;
+        }
+      } else {
+        render();
+      }
+    }, (err)=>{
+      console.error('Firestore sync error', err);
+      showToast('Ошибка синхронизации');
+    });
+  }catch(e){
+    console.error('loadData failed', e);
+  }
+}
+
+async function saveData(){
+  try{
+    await docRef.set({ devices: state.devices, logs: state.logs });
+  }catch(e){
+    console.error('Save failed', e);
+    showToast('Ошибка сохранения');
+  }
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+// --- Password protection for add/delete ---
+const ADMIN_PASSWORD = '3521905RuS';
+function checkAdminPassword(){
+  const pass = prompt('Введите пароль для этого действия:');
+  if(pass === null) return false; // cancelled
+  if(pass !== ADMIN_PASSWORD){
+    showToast('Неверный пароль');
+    return false;
+  }
+  return true;
+}
+
+function deviceUrl(id){
+  return `${location.origin}${location.pathname}?device=${encodeURIComponent(id)}`;
+}
+
+const qrCache = {};
+function getQR(id){
+  if(qrCache[id]) return qrCache[id];
+  const tmp = document.createElement('div');
+  tmp.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+  document.body.appendChild(tmp);
+  new QRCode(tmp, {
+    text: deviceUrl(id), width:220, height:220,
+    colorDark:'#12161d', colorLight:'#ffffff', correctLevel: QRCode.CorrectLevel.M
+  });
+  const canvas = tmp.querySelector('canvas');
+  const img = tmp.querySelector('img');
+  const dataUrl = canvas ? canvas.toDataURL('image/png') : (img ? img.src : '');
+  document.body.removeChild(tmp);
+  qrCache[id] = dataUrl;
+  return dataUrl;
+}
+
+function fmtDate(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit', year:'numeric'});
+}
+
+function render(){
+  statsEl.innerHTML = `
+    <div><b>${state.devices.length}</b>устройств</div>
+    <div><b>${Object.values(state.logs).reduce((a,l)=>a+l.length,0)}</b>записей</div>
+  `;
+
+  const repairCount = state.devices.filter(d=>d.status==='in_repair').length;
+  const repairChip = document.getElementById('repairChip');
+  if(repairChip) repairChip.textContent = repairCount>0 ? `🔧 В ремонте (${repairCount})` : `🔧 В ремонте`;
+
+  let list = state.devices.filter(d => filterType==='all' || (filterType==='in_repair' ? d.status==='in_repair' : d.type===filterType));
+  if(searchQ.trim()){
+    const q = searchQ.toLowerCase();
+    list = list.filter(d =>
+      (d.name||'').toLowerCase().includes(q) ||
+      (d.owner||'').toLowerCase().includes(q) ||
+      (d.inv||'').toLowerCase().includes(q) ||
+      (d.location||'').toLowerCase().includes(q)
+    );
+  }
+
+  list = list.slice().sort((a,b)=> (b.status==='in_repair'?1:0) - (a.status==='in_repair'?1:0));
+
+  visibleDevices = list;
+
+  if(list.length===0){
+    contentEl.innerHTML = `<div class="empty">Ничего не найдено.<br>Нажмите «+ Устройство», чтобы добавить первое.</div>`;
+    return;
+  }
+
+  contentEl.innerHTML = `<div class="grid" id="grid"></div>`;
+  const grid = document.getElementById('grid');
+  list.forEach(d=>{
+    const card = document.createElement('div');
+    card.className = `tag type-${d.type}`;
+    card.onclick = ()=>openDetail(d.id);
+    const lastLog = (state.logs[d.id]||[])[0];
+    card.innerHTML = `
+      <div class="tag-hole"></div>
+      ${d.status==='in_repair' ? `<div class="repair-badge">🔧 в ремонте</div>` : ''}
+      <div class="tag-type">${TYPE_LABELS[d.type]||d.type}</div>
+      <div class="tag-name">${escapeHtml(d.name)}</div>
+      <div class="tag-qr"><img src="${getQR(d.id)}" style="width:100%;height:100%;object-fit:contain;" alt="QR"></div>
+      <div class="tag-meta">
+        <div>Инв: <b>${escapeHtml(d.inv||'—')}</b></div>
+        <div>Владелец: <b>${escapeHtml(d.owner||'—')}</b></div>
+        ${lastLog ? `<div>Посл. обслуж.: <b>${fmtDate(lastLog.date)}</b></div>` : `<div>Обслуживания нет</div>`}
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function escapeHtml(s){
+  const div = document.createElement('div');
+  div.textContent = s || '';
+  return div.innerHTML;
+}
+
+// --- Add device modal ---
+document.getElementById('addBtn').onclick = ()=>{
+  if(!checkAdminPassword()) return;
+  openModal(`
+    <button class="close-x" onclick="closeModal()">&times;</button>
+    <h2>Новое устройство</h2>
+    <div class="field"><label>Тип</label>
+      <select id="f-type">
+        <option value="printer">Принтер</option>
+        <option value="radio">Рация</option>
+        <option value="laptop">Ноутбук</option>
+        <option value="other">Другое</option>
+      </select>
+    </div>
+    <div class="field"><label>Название / модель</label><input id="f-name" placeholder="напр. HP LaserJet 400, каб. 12"></div>
+    <div class="row2">
+      <div class="field"><label>Инв. номер</label><input id="f-inv" placeholder="напр. 00452"></div>
+      <div class="field"><label>Владелец / отдел</label><input id="f-owner" placeholder="напр. Иванов А. / Бухгалтерия"></div>
+    </div>
+    <div class="field"><label>Расположение</label><input id="f-location" placeholder="напр. 3 этаж, каб. 305"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Отмена</button>
+      <button class="btn" onclick="saveDevice()">Добавить</button>
+    </div>
+  `);
+  setTimeout(()=>document.getElementById('f-name').focus(), 50);
+};
+
+function cancelEdit(id){
+  if(qrMode){ closeModal(); } else { openDetail(id); }
+}
+
+function refreshDetail(id){
+  if(qrMode){
+    openDetail(id, true);
+  } else {
+    render();
+    openDetail(id);
+  }
+}
+
+async function saveDevice(){
+  const name = document.getElementById('f-name').value.trim();
+  if(!name){ showToast('Укажите название устройства'); return; }
+  const device = {
+    id: uid(),
+    type: document.getElementById('f-type').value,
+    name,
+    inv: document.getElementById('f-inv').value.trim(),
+    owner: document.getElementById('f-owner').value.trim(),
+    location: document.getElementById('f-location').value.trim(),
+    createdAt: new Date().toISOString()
+  };
+  state.devices.unshift(device);
+  state.logs[device.id] = [];
+  await saveData();
+  closeModal();
+  render();
+  showToast('Устройство добавлено');
+}
+
+function editDevice(id){
+  const d = state.devices.find(x=>x.id===id);
+  if(!d) return;
+  openModal(`
+    <button class="close-x" onclick="closeModal()">&times;</button>
+    <h2>Изменить устройство</h2>
+    <div class="field"><label>Тип</label>
+      <select id="f-type">
+        <option value="printer">Принтер</option>
+        <option value="radio">Рация</option>
+        <option value="laptop">Ноутбук</option>
+        <option value="other">Другое</option>
+      </select>
+    </div>
+    <div class="field"><label>Название / модель</label><input id="f-name" placeholder="напр. HP LaserJet 400, каб. 12"></div>
+    <div class="row2">
+      <div class="field"><label>Инв. номер</label><input id="f-inv" placeholder="напр. 00452"></div>
+      <div class="field"><label>Владелец / отдел</label><input id="f-owner" placeholder="напр. Иванов А. / Бухгалтерия"></div>
+    </div>
+    <div class="field"><label>Расположение</label><input id="f-location" placeholder="напр. 3 этаж, каб. 305"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="cancelEdit('${id}')">Отмена</button>
+      <button class="btn" onclick="saveEditedDevice('${id}')">Сохранить</button>
+    </div>
+  `);
+  document.getElementById('f-type').value = d.type;
+  document.getElementById('f-name').value = d.name || '';
+  document.getElementById('f-inv').value = d.inv || '';
+  document.getElementById('f-owner').value = d.owner || '';
+  document.getElementById('f-location').value = d.location || '';
+  setTimeout(()=>document.getElementById('f-name').focus(), 50);
+}
+
+async function saveEditedDevice(id){
+  const name = document.getElementById('f-name').value.trim();
+  if(!name){ showToast('Укажите название устройства'); return; }
+  const d = state.devices.find(x=>x.id===id);
+  if(!d) return;
+  d.type = document.getElementById('f-type').value;
+  d.name = name;
+  d.inv = document.getElementById('f-inv').value.trim();
+  d.owner = document.getElementById('f-owner').value.trim();
+  d.location = document.getElementById('f-location').value.trim();
+  await saveData();
+  closeModal();
+  refreshDetail(id);
+  showToast('Изменения сохранены');
+}
+
+// --- Detail view ---
+function openDetail(id, asPage){
+  currentDeviceId = id;
+  const d = state.devices.find(x=>x.id===id);
+  if(!d) return;
+  const logs = state.logs[id] || [];
+  const body = `
+    <div class="detail-head">
+      <div class="detail-qr"><img src="${getQR(d.id)}" style="width:120px;height:120px;display:block;" alt="QR"></div>
+      <div class="detail-info">
+        <div class="tag-type">${TYPE_LABELS[d.type]||d.type}</div>
+        <h2>${escapeHtml(d.name)}</h2>
+        <div class="tag-meta">
+          <div>Инв. номер: <b>${escapeHtml(d.inv||'—')}</b></div>
+          <div>Владелец: <b>${escapeHtml(d.owner||'—')}</b></div>
+          <div>Расположение: <b>${escapeHtml(d.location||'—')}</b></div>
+          ${asPage ? '' : `<div>Ссылка QR: <b style="font-size:10.5px;">${deviceUrl(d.id)}</b></div>`}
+        </div>
+        <div class="detail-actions">
+          <button class="btn btn-sm ghost" onclick="editDevice('${d.id}')">✎ Изменить</button>
+          <button class="btn btn-sm ghost" onclick="downloadQR('${d.id}','${escapeHtml(d.name).replace(/'/g,"")}')">Скачать QR</button>
+          ${asPage ? '' : `<button class="btn btn-sm ghost" onclick="printLabels([state.devices.find(x=>x.id==='${d.id}')])">Печать наклейки</button>`}
+          <button class="btn btn-sm danger" onclick="deleteDevice('${d.id}')">Удалить устройство</button>
+        </div>
+      </div>
+    </div>
+
+    ${d.status === 'in_repair' ? `
+      <div class="repair-banner">
+        <div>🔧 <b>В ремонте</b> — взял(а) ${escapeHtml(d.inRepairBy||'—')}, ${fmtDateTime(d.inRepairSince)}</div>
+        <button class="btn btn-sm" onclick="finishRepair('${d.id}')">✅ Завершить ремонт</button>
+      </div>
+    ` : `
+      <button class="btn repair-btn" onclick="startRepair('${d.id}')">🔧 Иду чинить это устройство</button>
+    `}
+
+    <div class="log-section">
+      <h3>Добавить запись обслуживания</h3>
+      <div class="row2">
+        <div class="field"><label>Дата</label><input id="log-date" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Действие</label>
+          <select id="log-action">
+            <option>Замена картриджа / краски</option>
+            <option>Чистка</option>
+            <option>Ремонт</option>
+            <option>Замена батареи</option>
+            <option>Диагностика</option>
+            <option>Настройка / установка ПО</option>
+            <option>Другое</option>
+          </select>
+        </div>
+      </div>
+      <div class="field"><label>Комментарий</label><textarea id="log-note" placeholder="Что именно сделано, использованные детали..."></textarea></div>
+      <div class="modal-actions" style="justify-content:flex-start;">
+        <button class="btn btn-sm" onclick="addLog('${d.id}')">+ Добавить запись</button>
+      </div>
+
+      <h3>История (${logs.length})</h3>
+      <div id="log-list">
+        ${logs.length===0 ? `<div class="no-logs">Записей ещё нет</div>` :
+          logs.map(l=>`
+            <div class="log-entry">
+              <div class="log-entry-top"><span>${fmtDate(l.date)}</span></div>
+              <div class="log-entry-action">${escapeHtml(l.action)}</div>
+              ${l.note ? `<div class="log-entry-note">${escapeHtml(l.note)}</div>` : ''}
+            </div>
+          `).join('')}
+      </div>
+    </div>
+  `;
+
+  if(asPage){
+    contentEl.innerHTML = `
+      <div class="modal" style="margin:0 auto; max-width:520px;">
+        ${body}
+        <div style="text-align:center; margin-top:18px; padding-top:16px; border-top:1px dashed var(--border);">
+          <a href="javascript:void(0)" onclick="exitQrMode()" style="color:var(--muted); font-family:var(--mono); font-size:12px;">Показать все устройства →</a>
+        </div>
+      </div>
+    `;
+  } else {
+    openModal(`<button class="close-x" onclick="closeModal()">&times;</button>${body}`);
+  }
+}
+
+function exitQrMode(){
+  qrMode = false;
+  history.replaceState(null, '', location.pathname);
+  document.getElementById('toolbar').style.display = '';
+  render();
+}
+
+async function startRepair(deviceId){
+  let name = localStorage.getItem('tech-name');
+  if(!name){
+    name = prompt('Как вас зовут? (запомню на этом телефоне)');
+    if(!name || !name.trim()){ return; }
+    name = name.trim();
+    localStorage.setItem('tech-name', name);
+  }
+  const d = state.devices.find(x=>x.id===deviceId);
+  if(!d) return;
+  d.status = 'in_repair';
+  d.inRepairBy = name;
+  d.inRepairSince = new Date().toISOString();
+  await saveData();
+  refreshDetail(deviceId);
+  showToast('Отмечено: вы чините это устройство');
+}
+
+async function finishRepair(deviceId){
+  const d = state.devices.find(x=>x.id===deviceId);
+  if(!d) return;
+  const note = prompt('Что было сделано? (необязательно)') || '';
+  if(!state.logs[deviceId]) state.logs[deviceId] = [];
+  state.logs[deviceId].unshift({
+    id: uid(),
+    date: new Date().toISOString().slice(0,10),
+    action: 'Ремонт завершён',
+    note: note.trim() ? `${note.trim()} (чинил: ${d.inRepairBy||'—'})` : `Чинил: ${d.inRepairBy||'—'}`
+  });
+  delete d.status;
+  delete d.inRepairBy;
+  delete d.inRepairSince;
+  await saveData();
+  refreshDetail(deviceId);
+  showToast('Ремонт завершён');
+}
+
+function fmtDateTime(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+}
+
+async function addLog(deviceId){
+  const date = document.getElementById('log-date').value || new Date().toISOString().slice(0,10);
+  const action = document.getElementById('log-action').value;
+  const note = document.getElementById('log-note').value.trim();
+  if(!state.logs[deviceId]) state.logs[deviceId] = [];
+  state.logs[deviceId].unshift({ id: uid(), date, action, note });
+  await saveData();
+  refreshDetail(deviceId);
+  showToast('Запись добавлена');
+}
+
+async function deleteDevice(id){
+  if(!checkAdminPassword()) return;
+  if(!confirm('Удалить устройство и всю его историю обслуживания?')) return;
+  state.devices = state.devices.filter(d=>d.id!==id);
+  delete state.logs[id];
+  await saveData();
+  if(qrMode){
+    exitQrMode();
+  } else {
+    closeModal();
+    render();
+  }
+  showToast('Устройство удалено');
+}
+
+// --- Export to Excel ---
+function exportExcel(){
+  const source = visibleDevices.length ? visibleDevices : state.devices;
+  if(source.length===0){ showToast('Нет устройств для экспорта'); return; }
+
+  const devicesRows = source.map(d => ({
+    'ID': d.id,
+    'Тип': TYPE_LABELS[d.type] || d.type,
+    'Название': d.name,
+    'Инв. номер': d.inv || '',
+    'Владелец': d.owner || '',
+    'Расположение': d.location || '',
+    'QR-код (ссылка)': deviceUrl(d.id),
+    'Добавлено': d.createdAt ? fmtDate(d.createdAt) : ''
+  }));
+
+  const logRows = [];
+  source.forEach(d=>{
+    (state.logs[d.id] || []).forEach(l=>{
+      logRows.push({
+        'Устройство': d.name,
+        'Инв. номер': d.inv || '',
+        'Дата': fmtDate(l.date),
+        'Действие': l.action,
+        'Комментарий': l.note || ''
+      });
+    });
+  });
+
+  const wb = XLSX.utils.book_new();
+  const wsDevices = XLSX.utils.json_to_sheet(devicesRows);
+  wsDevices['!cols'] = [{wch:8},{wch:12},{wch:28},{wch:12},{wch:22},{wch:22},{wch:16},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, wsDevices, 'Устройства');
+
+  const wsLogs = XLSX.utils.json_to_sheet(logRows);
+  wsLogs['!cols'] = [{wch:28},{wch:12},{wch:12},{wch:24},{wch:34}];
+  XLSX.utils.book_append_sheet(wb, wsLogs, 'Обслуживание');
+
+  const dateStr = new Date().toISOString().slice(0,10);
+  const groupLabel = filterType==='all' ? 'Все' : (filterType==='in_repair' ? 'В-ремонте' : (TYPE_LABELS[filterType]||filterType));
+  XLSX.writeFile(wb, `Оборудование_${groupLabel}_${dateStr}.xlsx`);
+  showToast('Excel-файл скачан');
+}
+document.getElementById('exportBtn').onclick = exportExcel;
+
+// --- Print QR labels ---
+function printLabels(devices){
+  if(!devices || devices.length===0){ showToast('Нечего печатать'); return; }
+  const area = document.getElementById('print-area');
+  area.innerHTML = `<div class="label-sheet" id="label-sheet"></div>`;
+  const sheet = document.getElementById('label-sheet');
+  devices.forEach(d=>{
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.innerHTML = `<div class="l-qr"><img src="${getQR(d.id)}" style="width:100%;height:100%;object-fit:contain;" alt="QR"></div><div class="l-name">${escapeHtml(d.name)}</div><div class="l-inv">Инв: ${escapeHtml(d.inv||d.id)}</div>${d.owner ? `<div class="l-owner">${escapeHtml(d.owner)}</div>` : ''}`;
+    sheet.appendChild(label);
+  });
+  setTimeout(()=>{ window.print(); }, 50);
+}
+document.getElementById('printAllBtn').onclick = ()=> printLabels(visibleDevices);
+
+function downloadQR(id, name){
+  const dataUrl = getQR(id);
+  if(!dataUrl){ showToast('QR не найден'); return; }
+  const link = document.createElement('a');
+  link.download = `QR_${name.replace(/[^a-zA-Zа-яА-Я0-9]+/g,'_')}.png`;
+  link.href = dataUrl;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+// --- modal helpers ---
+function openModal(html){
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.id = 'overlay';
+  overlay.onclick = (e)=>{ if(e.target.id==='overlay') closeModal(); };
+  overlay.innerHTML = `<div class="modal">${html}</div>`;
+  document.body.appendChild(overlay);
+}
+function closeModal(){
+  const o = document.getElementById('overlay');
+  if(o) o.remove();
+  currentDeviceId = null;
+}
+
+// --- filters ---
+document.querySelectorAll('.chip').forEach(chip=>{
+  chip.onclick = ()=>{
+    document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+    chip.classList.add('active');
+    filterType = chip.dataset.type;
+    render();
+  };
+});
+let searchDebounce = null;
+document.getElementById('search').addEventListener('input', (e)=>{
+  searchQ = e.target.value;
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(render, 180);
+});
+
+loadData();
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>
