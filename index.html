@@ -237,7 +237,7 @@ async function loadData(){
           contentEl.innerHTML = '';
           openDetail(wantedId, true);
         } else {
-          contentEl.innerHTML = `<div class="empty">Устройство не найдено.<br><a href="javascript:void(0)" onclick="exitQrMode()" style="color:var(--amber)">Показать все устройства</a></div>`;
+          contentEl.innerHTML = `<div class="empty">Устройство не найдено.</div>`;
         }
       } else {
         render();
@@ -594,9 +594,6 @@ function openDetail(id, asPage){
     contentEl.innerHTML = `
       <div class="modal" style="margin:0 auto; max-width:520px;">
         ${body}
-        <div style="text-align:center; margin-top:18px; padding-top:16px; border-top:1px dashed var(--border);">
-          <a href="javascript:void(0)" onclick="exitQrMode()" style="color:var(--muted); font-family:var(--mono); font-size:12px;">Показать все устройства →</a>
-        </div>
       </div>
     `;
   } else {
