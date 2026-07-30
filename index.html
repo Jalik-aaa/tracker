@@ -220,7 +220,9 @@ async function loadData(){
   try{
     const params = new URLSearchParams(location.search);
     const wantedId = params.get('device');
+    const autoRepair = params.get('repair') === '1';
     if(wantedId) qrMode = true;
+    let autoRepairDone = false;
 
     docRef.onSnapshot((snap)=>{
       if(snap.exists){
@@ -236,6 +238,11 @@ async function loadData(){
         if(state.devices.some(d=>d.id===wantedId)){
           contentEl.innerHTML = '';
           openDetail(wantedId, true);
+          if(autoRepair && !autoRepairDone){
+            autoRepairDone = true;
+            history.replaceState(null, '', `${location.pathname}?device=${encodeURIComponent(wantedId)}`);
+            startRepair(wantedId);
+          }
         } else {
           contentEl.innerHTML = `<div class="empty">Устройство не найдено.</div>`;
         }
@@ -285,12 +292,14 @@ function checkAdminPassword(){
 const TELEGRAM_BOT_TOKEN = '8667792092:AAEhEeo2lKFugVVDWJVs7Llk4kzXlrc39j4';
 const TELEGRAM_CHAT_ID = '-5319449377';
 
-async function sendTelegramNotification(text){
+async function sendTelegramNotification(text, replyMarkup){
   try{
+    const payload = { chat_id: TELEGRAM_CHAT_ID, text };
+    if(replyMarkup) payload.reply_markup = replyMarkup;
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text })
+      body: JSON.stringify(payload)
     });
     if(!res.ok) throw new Error('Telegram API error');
     return true;
@@ -311,7 +320,9 @@ async function callMaster(deviceId){
     `Инв. номер: ${d.inv || '—'}\n` +
     `Владелец / отдел: ${d.owner || '—'}\n` +
     `Расположение: ${d.location || '—'}`;
-  const ok = await sendTelegramNotification(text);
+  const repairUrl = `${deviceUrl(d.id)}&repair=1`;
+  const replyMarkup = { inline_keyboard: [[{ text: '🔧 Иду чинить', url: repairUrl }]] };
+  const ok = await sendTelegramNotification(text, replyMarkup);
   showToast(ok ? 'Мастер вызван' : 'Не удалось отправить уведомление');
 }
 
@@ -320,19 +331,22 @@ function deviceUrl(id){
 }
 
 const qrCache = {};
+let qrTempContainer = null;
 function getQR(id){
   if(qrCache[id]) return qrCache[id];
-  const tmp = document.createElement('div');
-  tmp.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
-  document.body.appendChild(tmp);
-  new QRCode(tmp, {
+  if(!qrTempContainer){
+    qrTempContainer = document.createElement('div');
+    qrTempContainer.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+    document.body.appendChild(qrTempContainer);
+  }
+  qrTempContainer.innerHTML = '';
+  new QRCode(qrTempContainer, {
     text: deviceUrl(id), width:220, height:220,
     colorDark:'#12161d', colorLight:'#ffffff', correctLevel: QRCode.CorrectLevel.M
   });
-  const canvas = tmp.querySelector('canvas');
-  const img = tmp.querySelector('img');
+  const canvas = qrTempContainer.querySelector('canvas');
+  const img = qrTempContainer.querySelector('img');
   const dataUrl = canvas ? canvas.toDataURL('image/png') : (img ? img.src : '');
-  document.body.removeChild(tmp);
   qrCache[id] = dataUrl;
   return dataUrl;
 }
@@ -384,7 +398,7 @@ function render(){
       ${d.status==='in_repair' ? `<div class="repair-badge">🔧 в ремонте</div>` : ''}
       <div class="tag-type">${TYPE_LABELS[d.type]||d.type}</div>
       <div class="tag-name">${escapeHtml(d.name)}</div>
-      <div class="tag-qr"><img src="${getQR(d.id)}" style="width:100%;height:100%;object-fit:contain;" alt="QR"></div>
+      <div class="tag-qr"><img src="${getQR(d.id)}" loading="lazy" style="width:100%;height:100%;object-fit:contain;" alt="QR"></div>
       <div class="tag-meta">
         <div>Инв: <b>${escapeHtml(d.inv||'—')}</b></div>
         <div>Владелец: <b>${escapeHtml(d.owner||'—')}</b></div>
@@ -401,10 +415,10 @@ function render(){
   });
 }
 
+const ESCAPE_MAP = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' };
 function escapeHtml(s){
-  const div = document.createElement('div');
-  div.textContent = s || '';
-  return div.innerHTML;
+  if(!s) return '';
+  return String(s).replace(/[&<>"']/g, c => ESCAPE_MAP[c]);
 }
 
 // --- Add device modal ---
@@ -469,6 +483,7 @@ async function saveDevice(){
 }
 
 function editDevice(id){
+  if(!checkAdminPassword()) return;
   const d = state.devices.find(x=>x.id===id);
   if(!d) return;
   openModal(`
@@ -549,9 +564,7 @@ function openDetail(id, asPage){
         <div>🔧 <b>В ремонте</b> — взял(а) ${escapeHtml(d.inRepairBy||'—')}, ${fmtDateTime(d.inRepairSince)}</div>
         <button class="btn btn-sm" onclick="finishRepair('${d.id}')">✅ Завершить ремонт</button>
       </div>
-    ` : `
-      <button class="btn repair-btn" onclick="startRepair('${d.id}')">🔧 Иду чинить это устройство</button>
-    `}
+    ` : ''}
 
     <button class="btn repair-btn" style="background:var(--violet); border-color:var(--violet); color:#1a1030;" onclick="callMaster('${d.id}')">🛎 Вызвать мастера</button>
 
