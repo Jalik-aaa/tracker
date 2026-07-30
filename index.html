@@ -260,6 +260,18 @@ function showToast(msg){
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 
+// --- Password protection for add/delete ---
+const ADMIN_PASSWORD = '3521905RuS';
+function checkAdminPassword(){
+  const pass = prompt('Введите пароль для этого действия:');
+  if(pass === null) return false; // cancelled
+  if(pass !== ADMIN_PASSWORD){
+    showToast('Неверный пароль');
+    return false;
+  }
+  return true;
+}
+
 function deviceUrl(id){
   return `${location.origin}${location.pathname}?device=${encodeURIComponent(id)}`;
 }
@@ -348,6 +360,7 @@ function escapeHtml(s){
 
 // --- Add device modal ---
 document.getElementById('addBtn').onclick = ()=>{
+  if(!checkAdminPassword()) return;
   openModal(`
     <button class="close-x" onclick="closeModal()">&times;</button>
     <h2>Новое устройство</h2>
@@ -602,6 +615,7 @@ async function addLog(deviceId){
 }
 
 async function deleteDevice(id){
+  if(!checkAdminPassword()) return;
   if(!confirm('Удалить устройство и всю его историю обслуживания?')) return;
   state.devices = state.devices.filter(d=>d.id!==id);
   delete state.logs[id];
