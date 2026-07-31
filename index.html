@@ -179,7 +179,9 @@
     <button class="btn ghost" id="exportBtn">⬇ Excel</button>
     <button class="btn ghost" id="printAllBtn">🖶 Наклейки</button>
     <button class="btn ghost" id="selectModeBtn">☑ Выбрать для печати</button>
+    <button class="btn danger" id="clearLogsBtn">🗑 Очистить историю</button>
     <button class="btn" id="printSelectedBtn" style="display:none;">🖶 Печать выбранных</button>
+    <button class="btn ghost" id="clearHistoryBtn" style="border-color:var(--danger); color:var(--danger);">🗑 Очистить историю</button>
     <button class="btn" id="addBtn">+ Устройство</button>
   </div>
 
@@ -760,6 +762,19 @@ function exportExcel(){
   showToast('Excel-файл скачан');
 }
 document.getElementById('exportBtn').onclick = exportExcel;
+
+// --- Clear all maintenance history ---
+document.getElementById('clearLogsBtn').onclick = async ()=>{
+  if(!checkAdminPassword()) return;
+  const totalLogs = Object.values(state.logs).reduce((a,l)=>a+l.length,0);
+  if(totalLogs === 0){ showToast('История уже пуста'); return; }
+  if(!confirm(`Удалить всю историю обслуживания (${totalLogs} записей)? Устройства останутся, но записи не восстановить.`)) return;
+  if(!confirm('Точно удалить? Это действие необратимо.')) return;
+  state.logs = {};
+  await saveData();
+  render();
+  showToast('История обслуживания очищена');
+};
 
 // --- Print QR labels ---
 function printLabels(devices){
