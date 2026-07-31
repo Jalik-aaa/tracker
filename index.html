@@ -179,9 +179,9 @@
     <button class="btn ghost" id="exportBtn">⬇ Excel</button>
     <button class="btn ghost" id="printAllBtn">🖶 Наклейки</button>
     <button class="btn ghost" id="selectModeBtn">☑ Выбрать для печати</button>
+    <button class="btn ghost" id="historyByDateBtn">📅 История по датам</button>
     <button class="btn danger" id="clearLogsBtn">🗑 Очистить историю</button>
     <button class="btn" id="printSelectedBtn" style="display:none;">🖶 Печать выбранных</button>
-    <button class="btn ghost" id="clearHistoryBtn" style="border-color:var(--danger); color:var(--danger);">🗑 Очистить историю</button>
     <button class="btn" id="addBtn">+ Устройство</button>
   </div>
 
@@ -761,6 +761,46 @@ function exportExcel(){
   XLSX.writeFile(wb, `Оборудование_${groupLabel}_${dateStr}.xlsx`);
   showToast('Excel-файл скачан');
 }
+// --- History by date ---
+document.getElementById('historyByDateBtn').onclick = ()=> openHistoryByDate();
+
+function openHistoryByDate(dateStr){
+  const date = dateStr || new Date().toISOString().slice(0,10);
+  openModal(`
+    <button class="close-x" onclick="closeModal()">&times;</button>
+    <h2>📅 История по датам</h2>
+    <div class="field"><label>Дата</label><input id="history-date-picker" type="date" value="${date}" onchange="renderHistoryByDate(this.value)"></div>
+    <div id="history-date-results"></div>
+  `);
+  renderHistoryByDate(date);
+}
+
+function renderHistoryByDate(date){
+  const container = document.getElementById('history-date-results');
+  if(!container) return;
+  const entries = [];
+  state.devices.forEach(d=>{
+    (state.logs[d.id] || []).forEach(l=>{
+      if(l.date === date) entries.push({ device: d, log: l });
+    });
+  });
+  if(entries.length === 0){
+    container.innerHTML = `<div class="empty" style="padding:24px 0;">На эту дату записей нет.</div>`;
+    return;
+  }
+  container.innerHTML = `
+    <div style="margin-top:12px; display:flex; flex-direction:column; gap:10px;">
+      ${entries.map(({device,log})=>`
+        <div class="log-entry">
+          <div class="log-entry-action"><b>${escapeHtml(device.name)}</b> — ${escapeHtml(log.action)}</div>
+          ${log.note ? `<div class="log-entry-note">${escapeHtml(log.note)}</div>` : ''}
+          <div style="font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:4px;">Инв: ${escapeHtml(device.inv||'—')}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
 document.getElementById('exportBtn').onclick = exportExcel;
 
 // --- Clear all maintenance history ---
